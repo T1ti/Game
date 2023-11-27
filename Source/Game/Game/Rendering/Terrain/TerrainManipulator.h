@@ -32,6 +32,7 @@ private:
 
 	bool _isManipulating = false;
 	bool _isLower = false;
+	f32 _lockedHeight = 0.0f;
 
 	vec3 _debugLastClickPos;
 	std::vector<vec3> _debugPoints;

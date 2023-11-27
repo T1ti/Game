@@ -15,14 +15,20 @@
 TerrainManipulator::TerrainManipulator(TerrainRenderer& terrainRenderer, DebugRenderer& debugRenderer)
     : _terrainRenderer(terrainRenderer)
     , _debugRenderer(debugRenderer)
+    , _debugLastClickPos(0.0f)
 {
     InputManager* inputManager = ServiceLocator::GetInputManager();
     KeybindGroup* keybindGroup = inputManager->GetKeybindGroupByHash("Imgui"_h);
 
     keybindGroup->AddKeyboardCallback("Manipulate", GLFW_MOUSE_BUTTON_LEFT, KeybindAction::Click, KeybindModifier::Any, [&](i32 key, KeybindAction action, KeybindModifier modifier) 
     {
-        _isManipulating = action == KeybindAction::Press;
-        _isLower = modifier == KeybindModifier::Shift;
+        _isManipulating = action == KeybindAction::Press && (modifier == KeybindModifier::Shift || modifier == KeybindModifier::Ctrl);
+        _isLower = modifier == KeybindModifier::Ctrl;
+        // get the last clicked height
+        vec3 mouseWorldPosition;
+        Editor::Viewport* viewport = ServiceLocator::GetEditorHandler()->GetViewport();
+        if (action == KeybindAction::Press && Util::Physics::GetMouseWorldPosition(viewport, mouseWorldPosition))
+            _lockedHeight = mouseWorldPosition.y;
         return true;
     });
 }
@@ -59,25 +65,110 @@ void TerrainManipulator::Update(f32 deltaTime)
             Renderer::GPUVector<TerrainRenderer::CellHeightRange>& gpuCellHeightRanges = _terrainRenderer._cellHeightRanges;
             std::vector<TerrainRenderer::CellHeightRange>& cellHeightRanges = gpuCellHeightRanges.Get();
 
-            for (const VertexData& vertexData : vertexDatas)
+            Editor::TerrainTools::TerrainBrushMode brushType = static_cast<Editor::TerrainTools::TerrainBrushMode>(terrainTools->GetBrushMode());
+
+
+            if (bool EditingTerrain = terrainTools->TerrainModeEnabled())
             {
-                // Update height
-                f32 height = vertices[vertexData.vertexID].height;
+                f32 change = pressure * deltaTime;
+                // used for flatten
+                f32 remain = 1.f - pow(0.5f, change);
+                f32 desiredHeight = terrainTools->LockedHeight() ? _lockedHeight : mouseWorldPosition.y;
 
-                height += pressure * vertexData.hardness * deltaTime * (_isLower ? -1.0f : 1.0f);
-                
-                vertices[vertexData.vertexID].height = height;
-                gpuVertices.SetDirtyElement(vertexData.vertexID);
+                bool instant = false;
+                bool allow_lower = terrainTools->AllowTerrainLower();
+                bool allow_raise = terrainTools->AllowTerrainRaise();
 
-                // Update height range for culling
-                TerrainRenderer::CellHeightRange& cellHeightRange = cellHeightRanges[vertexData.cellHeightRangeID];
-                cellHeightRange.min = glm::min(cellHeightRange.min, height);
-                cellHeightRange.max = glm::max(cellHeightRange.max, height);
-                gpuCellHeightRanges.SetDirtyElement(vertexData.cellHeightRangeID);
+                for (const VertexData& vertexData : vertexDatas)
+                {
+                    // Update height
+                    f32 height = vertices[vertexData.vertexID].height;
+
+                    switch (brushType)
+                    {
+                        case Editor::TerrainTools::TerrainBrushMode::SCULPT:
+                        {
+                            height += change * vertexData.hardness * (_isLower ? -1.0f : 1.0f);
+                            
+                            // vertices[vertexData.vertexID].height = height;
+                            break;
+                        }
+                        case Editor::TerrainTools::TerrainBrushMode::FLAT:
+                        // case Editor::TerrainTools::TerrainBrushMode::SMOOTH:
+                        {
+                            if (terrainTools->InstantPressure())
+                            {
+                                if (allow_raise && height < desiredHeight)
+                                    height = desiredHeight;
+                                if (allow_lower && height > desiredHeight)
+                                    height = desiredHeight;
+                            }
+                            else
+                            {
+                                float diff = desiredHeight - height;
+                                // float adjusted_diff = pressure * (diff) * deltaTime * vertexData.hardness;
+                                
+                                float adjusted_diff = remain * (desiredHeight - height) * vertexData.hardness;
+
+                                if (allow_raise && height < desiredHeight)
+                                {
+                                    // in case of very high pressure, make sure it can't be higher
+                                    if (adjusted_diff > diff)
+                                        adjusted_diff = diff;
+                                    // height += remain * (desiredHeight - height) * vertexData.hardness;
+                                    height += adjusted_diff;
+                                }
+
+
+                                else if (allow_lower && height > desiredHeight)
+                                {
+                                    if (adjusted_diff < diff)
+                                        adjusted_diff = diff;
+                                    height += adjusted_diff;
+                                }
+                            }
+
+                            // vertices[vertexData.vertexID].height = height;
+                            break;
+                        }
+                        case Editor::TerrainTools::TerrainBrushMode::SMOOTH:
+                        {
+                            // use average vertex height instead of click pos ?
+                            break;
+                        }
+                    }
+                    vertices[vertexData.vertexID].height = height;
+
+                    gpuVertices.SetDirtyElement(vertexData.vertexID);
+
+                    // Update height range for culling
+                    TerrainRenderer::CellHeightRange& cellHeightRange = cellHeightRanges[vertexData.cellHeightRangeID];
+                    cellHeightRange.min = glm::min(cellHeightRange.min, height);
+                    cellHeightRange.max = glm::max(cellHeightRange.max, height);
+                    gpuCellHeightRanges.SetDirtyElement(vertexData.cellHeightRangeID);
+                }
             }
+
         }
     }
 }
+
+// smooth seems to just be linear with smooth step applied
+// UE5 : 
+// linear : 
+// virtual float CalculateFalloff(float Distance, float Radius, float Falloff) override
+// {
+//     return Distance < Radius ? 1.0f :
+//         Falloff > 0.0f ? FMath::Max<float>(0.0f, 1.0f - (Distance - Radius) / Falloff) :
+//         0.0f;
+// }
+// smooth
+// virtual float CalculateFalloff(float Distance, float Radius, float Falloff) override
+// {
+//     float Y = Super::CalculateFalloff(Distance, Radius, Falloff);
+//     // Smooth-step it
+//     return Y * Y * (3 - 2 * Y);
+// }
 
 // A function to apply brush hardness.
 // 'distance' is the distance of the pixel from the brush center.
@@ -194,6 +285,20 @@ f32 CalculateSmoothstepHardness(f32 distance, f32 radius, f32 hardness)
     return effect;
 }
 
+f32 CalculateFlattenHardness(f32 distance, f32 radius, f32 hardness)
+{
+    // Calculate the falloff factor
+    f32 falloff = 1.0f - std::min(1.0f, distance / radius);
+
+    // Apply the hardness to the falloff
+    falloff = std::pow(falloff, hardness);
+
+    // Calculate the flattened height
+    f32 flattenedHeight = falloff * distance;
+
+    return flattenedHeight;
+}
+
 void TerrainManipulator::GetVertexDatasAroundWorldPos(const vec3& worldPos, f32 radius, f32 hardness, Editor::TerrainTools::HardnessMode hardnessMode, std::vector<VertexData>& outVertexDatas)
 {
     vec2 chunkGlobalPos = Util::Map::WorldPositionToChunkGlobalPos(worldPos);
@@ -204,7 +309,11 @@ void TerrainManipulator::GetVertexDatasAroundWorldPos(const vec3& worldPos, f32 
     ivec2 startCellIndices = static_cast<ivec2>(glm::floor(Util::Map::GetCellIndicesFromAdtPosition(startChunkGlobalPos)));
     ivec2 endCellIndices = static_cast<ivec2>(glm::floor(Util::Map::GetCellIndicesFromAdtPosition(endChunkGlobalPos)));
 
-    vec2 worldPos2D = vec2(worldPos.x, worldPos.z);
+    vec2 worldPos2D = vec2(worldPos.x, worldPos.z);                    
+    
+    Editor::TerrainTools* terrainTools = ServiceLocator::GetEditorHandler()->GetTerrainTools();
+    bool EditingTerrain = terrainTools->TerrainModeEnabled();
+    Editor::TerrainTools::TerrainBrushMode terrainBrushMode = static_cast<Editor::TerrainTools::TerrainBrushMode>(terrainTools->GetBrushMode());
 
     for (i32 y = startCellIndices.y; y <= endCellIndices.y; y++)
     {
@@ -236,6 +345,7 @@ void TerrainManipulator::GetVertexDatasAroundWorldPos(const vec3& worldPos, f32 
             {
                 vec2 pos = Util::Map::GetGlobalVertexPosition(chunkID, cellID, i);
 
+                // TODO : this is 2D distance ?  should use height too
                 f32 distance = glm::distance(pos, worldPos2D);
                 if (distance < radius)
                 {
@@ -245,34 +355,54 @@ void TerrainManipulator::GetVertexDatasAroundWorldPos(const vec3& worldPos, f32 
                     vertexData.localCellID = cellID;
                     vertexData.cellHeightRangeID = (chunkIndex * Terrain::CHUNK_NUM_CELLS) + cellID;
 
-                    switch (hardnessMode)
+                    if (EditingTerrain)
                     {
-                        case Editor::TerrainTools::HardnessMode::LINEAR:
+                        if (terrainBrushMode == Editor::TerrainTools::TerrainBrushMode::SCULPT 
+                            || terrainBrushMode == Editor::TerrainTools::TerrainBrushMode::FLAT
+                            || terrainBrushMode == Editor::TerrainTools::TerrainBrushMode::SMOOTH)
                         {
-                            vertexData.hardness = CalculateLinearHardness(distance, radius, hardness);
-                            break;
+                            switch (hardnessMode)
+                            {
+                                 case Editor::TerrainTools::HardnessMode::LINEAR:
+                                 {
+                                     vertexData.hardness = CalculateLinearHardness(distance, radius, hardness);
+                                     break;
+                                 }
+                                 case Editor::TerrainTools::HardnessMode::QUADRATIC:
+                                 {
+                                     vertexData.hardness = CalculateQuadraticHardness(distance, radius, hardness);
+                                     break;
+                                 }
+                                 case Editor::TerrainTools::HardnessMode::GAUSSIAN:
+                                 {
+                                     vertexData.hardness = CalculateGaussianHardness(distance, radius, hardness);
+                                     break;
+                                 }
+                                 case Editor::TerrainTools::HardnessMode::EXPONENTIAL:
+                                 {
+                                     vertexData.hardness = CalculateExponentialHardness(distance, radius, hardness);
+                                     break;
+                                 }
+                                 case Editor::TerrainTools::HardnessMode::SMOOTHSTEP:
+                                 {
+                                     vertexData.hardness = CalculateSmoothstepHardness(distance, radius, hardness);
+                                     break;
+                                
+                                 }
+                            }
                         }
-                        case Editor::TerrainTools::HardnessMode::QUADRATIC:
-                        {
-                            vertexData.hardness = CalculateQuadraticHardness(distance, radius, hardness);
-                            break;
-                        }
-                        case Editor::TerrainTools::HardnessMode::GAUSSIAN:
-                        {
-                            vertexData.hardness = CalculateGaussianHardness(distance, radius, hardness);
-                            break;
-                        }
-                        case Editor::TerrainTools::HardnessMode::EXPONENTIAL:
-                        {
-                            vertexData.hardness = CalculateExponentialHardness(distance, radius, hardness);
-                            break;
-                        }
-                        case Editor::TerrainTools::HardnessMode::SMOOTHSTEP:
-                        {
-                            vertexData.hardness = CalculateSmoothstepHardness(distance, radius, hardness);
-                            break;
-                        }
+                        // else if (terrainBrushMode == Editor::TerrainTools::TerrainBrushMode::FLAT)
+                        // {
+                        //     // Calculate the falloff factor based on distance and hardness
+                        //     float falloff = std::max(0.0f, 1.0f - (distance - radius) / (hardness * radius));
+                        // 
+                        //     auto test = CalculateFlattenHardness(distance, radius, hardness);
+                        // 
+                        //     vertexData.hardness = falloff;
+                        // }
+
                     }
+
                 }
             }
         }
