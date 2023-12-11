@@ -50,7 +50,7 @@ namespace Util
             return Math::FloorToInt(patchPos.y) + (Math::FloorToInt(patchPos.x) * Terrain::CELL_NUM_PATCHES_PER_STRIDE);
         }
 
-        vec2 GetCellPosition(u32 chunkID, u32 cellID)
+        vec2 GetGlobalCellPosition(u32 chunkID, u32 cellID)
         {
             const u32 cellX = cellID % Terrain::CHUNK_NUM_CELLS_PER_STRIDE;
             const u32 cellY = cellID / Terrain::CHUNK_NUM_CELLS_PER_STRIDE;

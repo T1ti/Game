@@ -56,21 +56,32 @@ void TerrainManipulator::Update(f32 deltaTime)
 
             Editor::TerrainTools::HardnessMode hardnessMode = static_cast<Editor::TerrainTools::HardnessMode>(terrainTools->GetHardnessMode());
 
-            std::vector<VertexData> vertexDatas;
-            GetVertexDatasAroundWorldPos(mouseWorldPosition, radius, hardness, hardnessMode, vertexDatas);
-
-            Renderer::GPUVector<TerrainRenderer::TerrainVertex>& gpuVertices = _terrainRenderer._vertices;
-            std::vector<TerrainRenderer::TerrainVertex>& vertices = gpuVertices.Get();
-
-            Renderer::GPUVector<TerrainRenderer::CellHeightRange>& gpuCellHeightRanges = _terrainRenderer._cellHeightRanges;
-            std::vector<TerrainRenderer::CellHeightRange>& cellHeightRanges = gpuCellHeightRanges.Get();
-
             Editor::TerrainTools::TerrainBrushMode brushType = static_cast<Editor::TerrainTools::TerrainBrushMode>(terrainTools->GetBrushMode());
 
-
-            if (bool EditingTerrain = terrainTools->TerrainModeEnabled())
+            if (terrainTools->TerrainModeEnabled())
             {
                 f32 change = pressure * deltaTime;
+
+                if (brushType == Editor::TerrainTools::TerrainBrushMode::HOLES)
+                {
+                    
+                    GetCellDatasAroundWorldPos(mouseWorldPosition, radius);
+                }
+
+                // maybe replace this by an enum/function that returns data editing mode (vertex/cell), this check is if we're editing vertices
+                if (brushType != Editor::TerrainTools::TerrainBrushMode::SCULPT && brushType != Editor::TerrainTools::TerrainBrushMode::FLAT)
+                    return;
+
+                // editing vertice data
+                std::vector<VertexData> vertexDatas;
+                GetVertexDatasAroundWorldPos(mouseWorldPosition, radius, hardness, hardnessMode, vertexDatas);
+
+                Renderer::GPUVector<TerrainRenderer::TerrainVertex>& gpuVertices = _terrainRenderer._vertices;
+                std::vector<TerrainRenderer::TerrainVertex>& vertices = gpuVertices.Get();
+
+                Renderer::GPUVector<TerrainRenderer::CellHeightRange>& gpuCellHeightRanges = _terrainRenderer._cellHeightRanges;
+                std::vector<TerrainRenderer::CellHeightRange>& cellHeightRanges = gpuCellHeightRanges.Get();
+
                 // used for flatten
                 f32 remain = 1.f - pow(0.5f, change);
                 f32 desiredHeight = terrainTools->LockedHeight() ? _lockedHeight : mouseWorldPosition.y;
@@ -78,6 +89,7 @@ void TerrainManipulator::Update(f32 deltaTime)
                 bool instant = false;
                 bool allow_lower = terrainTools->AllowTerrainLower();
                 bool allow_raise = terrainTools->AllowTerrainRaise();
+
 
                 for (const VertexData& vertexData : vertexDatas)
                 {
@@ -94,7 +106,6 @@ void TerrainManipulator::Update(f32 deltaTime)
                             break;
                         }
                         case Editor::TerrainTools::TerrainBrushMode::FLAT:
-                        // case Editor::TerrainTools::TerrainBrushMode::SMOOTH:
                         {
                             if (terrainTools->InstantPressure())
                             {
@@ -131,11 +142,12 @@ void TerrainManipulator::Update(f32 deltaTime)
                             // vertices[vertexData.vertexID].height = height;
                             break;
                         }
-                        case Editor::TerrainTools::TerrainBrushMode::SMOOTH:
-                        {
-                            // use average vertex height instead of click pos ?
-                            break;
-                        }
+                        //case Editor::TerrainTools::TerrainBrushMode::SMOOTH:
+                        //{
+                        //    // use average vertex height instead of click pos ?
+                        //    break;
+                        //}
+
                     }
                     vertices[vertexData.vertexID].height = height;
 
@@ -162,6 +174,7 @@ void TerrainManipulator::Update(f32 deltaTime)
 //         Falloff > 0.0f ? FMath::Max<float>(0.0f, 1.0f - (Distance - Radius) / Falloff) :
 //         0.0f;
 // }
+// 
 // smooth
 // virtual float CalculateFalloff(float Distance, float Radius, float Falloff) override
 // {
@@ -309,11 +322,13 @@ void TerrainManipulator::GetVertexDatasAroundWorldPos(const vec3& worldPos, f32 
     ivec2 startCellIndices = static_cast<ivec2>(glm::floor(Util::Map::GetCellIndicesFromAdtPosition(startChunkGlobalPos)));
     ivec2 endCellIndices = static_cast<ivec2>(glm::floor(Util::Map::GetCellIndicesFromAdtPosition(endChunkGlobalPos)));
 
-    vec2 worldPos2D = vec2(worldPos.x, worldPos.z);                    
-    
+    vec2 worldPos2D = vec2(worldPos.x, worldPos.z);           
+    ivec2 numCellsPerStride = ivec2(Terrain::CHUNK_NUM_CELLS_PER_STRIDE, Terrain::CHUNK_NUM_CELLS_PER_STRIDE);
+
     Editor::TerrainTools* terrainTools = ServiceLocator::GetEditorHandler()->GetTerrainTools();
     bool EditingTerrain = terrainTools->TerrainModeEnabled();
     Editor::TerrainTools::TerrainBrushMode terrainBrushMode = static_cast<Editor::TerrainTools::TerrainBrushMode>(terrainTools->GetBrushMode());
+
 
     for (i32 y = startCellIndices.y; y <= endCellIndices.y; y++)
     {
@@ -321,7 +336,6 @@ void TerrainManipulator::GetVertexDatasAroundWorldPos(const vec3& worldPos, f32 
         {
             ivec2 globalCellIndices = ivec2(x, y);
 
-            ivec2 numCellsPerStride = ivec2(Terrain::CHUNK_NUM_CELLS_PER_STRIDE, Terrain::CHUNK_NUM_CELLS_PER_STRIDE);
 
             ivec2 chunkIndices = globalCellIndices / numCellsPerStride;
             ivec2 cellIndices = globalCellIndices - (chunkIndices * numCellsPerStride);
@@ -345,7 +359,6 @@ void TerrainManipulator::GetVertexDatasAroundWorldPos(const vec3& worldPos, f32 
             {
                 vec2 pos = Util::Map::GetGlobalVertexPosition(chunkID, cellID, i);
 
-                // TODO : this is 2D distance ?  should use height too
                 f32 distance = glm::distance(pos, worldPos2D);
                 if (distance < radius)
                 {
@@ -358,8 +371,8 @@ void TerrainManipulator::GetVertexDatasAroundWorldPos(const vec3& worldPos, f32 
                     if (EditingTerrain)
                     {
                         if (terrainBrushMode == Editor::TerrainTools::TerrainBrushMode::SCULPT 
-                            || terrainBrushMode == Editor::TerrainTools::TerrainBrushMode::FLAT
-                            || terrainBrushMode == Editor::TerrainTools::TerrainBrushMode::SMOOTH)
+                            || terrainBrushMode == Editor::TerrainTools::TerrainBrushMode::FLAT)
+                            // || terrainBrushMode == Editor::TerrainTools::TerrainBrushMode::SMOOTH)
                         {
                             switch (hardnessMode)
                             {
@@ -408,3 +421,87 @@ void TerrainManipulator::GetVertexDatasAroundWorldPos(const vec3& worldPos, f32 
         }
     }
 }
+
+void TerrainManipulator::GetCellDatasAroundWorldPos(const vec3& worldPos, f32 radius)
+{
+    Renderer::GPUVector<TerrainRenderer::CellData>& cellDatas = _terrainRenderer._cellDatas;
+    std::vector<TerrainRenderer::CellData>& cells = cellDatas.Get();
+    ////
+
+
+    vec2 chunkGlobalPos = Util::Map::WorldPositionToChunkGlobalPos(worldPos);
+
+    vec2 startChunkGlobalPos = chunkGlobalPos - vec2(radius, radius);
+    vec2 endChunkGlobalPos = chunkGlobalPos + vec2(radius, radius);
+
+    ivec2 startCellIndices = static_cast<ivec2>(glm::floor(Util::Map::GetCellIndicesFromAdtPosition(startChunkGlobalPos)));
+    ivec2 endCellIndices = static_cast<ivec2>(glm::floor(Util::Map::GetCellIndicesFromAdtPosition(endChunkGlobalPos)));
+
+    vec2 worldPos2D = vec2(worldPos.x, worldPos.z);
+    ivec2 numCellsPerStride = ivec2(Terrain::CHUNK_NUM_CELLS_PER_STRIDE, Terrain::CHUNK_NUM_CELLS_PER_STRIDE);
+
+    for (i32 y = startCellIndices.y; y <= endCellIndices.y; y++)
+    {
+        for (i32 x = startCellIndices.x; x <= endCellIndices.x; x++)
+        {
+            ivec2 globalCellIndices = ivec2(x, y);
+
+            ivec2 chunkIndices = globalCellIndices / numCellsPerStride;
+            ivec2 cellIndices = globalCellIndices - (chunkIndices * numCellsPerStride);
+
+            u32 chunkID = (chunkIndices.x * Terrain::CHUNK_NUM_PER_MAP_STRIDE) + chunkIndices.y;
+            u32 cellID = (cellIndices.y * Terrain::CHUNK_NUM_CELLS_PER_STRIDE) + cellIndices.x;
+
+            u32 packedChunkCellID = (chunkID << 16) | (cellID & 0xffff);
+
+            if (!_terrainRenderer._packedChunkCellIDToGlobalCellID.contains(packedChunkCellID))
+            {
+                DebugHandler::PrintError("Shit is bad yo");
+            }
+
+            u32 globalCellIndex = _terrainRenderer._packedChunkCellIDToGlobalCellID[packedChunkCellID];
+            u32 chunkIndex = globalCellIndex / Terrain::CHUNK_NUM_CELLS;
+
+            /////////////////////////////////////////////////////////////////////////////////
+            bool need_update = false;
+
+            vec2 cell_pos = Util::Map::GetCellPosition(chunkID, cellID);
+
+            auto& currentCell = cells[globalCellIndex];
+
+            for (i32 patch_y = 0; patch_y <= Terrain::CELL_NUM_PATCHES_PER_STRIDE; patch_y++)
+            {
+                for (i32 patch_x = 0; patch_x <= Terrain::CELL_NUM_PATCHES_PER_STRIDE; patch_x++)
+                {
+                    const vec2 patch_pos = vec2(patch_x + 0, patch_y) * Terrain::PATCH_HALF_SIZE; // vec2(patch_x + 1, patch_y)
+                    const vec2 patchWorldPos = cell_pos + patch_pos;
+
+                    if (glm::distance(patchWorldPos, worldPos2D) <= radius)
+                    {
+                        need_update = true;
+
+                        //u32 patch_id = Util::Map::GetPatchIdFromPatchPos(patch_pos);
+                        u32 patch_id = Util::Map::GetPatchIdFromPatchPos(vec2(patch_x, patch_y));
+                        if (!_isLower)
+                            currentCell.hole |= static_cast<u64>(1) << patch_id;
+                        else
+                            currentCell.hole &= ~(static_cast<u64>(1) << patch_id);
+                    }
+                }
+            }
+            // test stuff
+            // need_update = true;
+            // testcell.hole = (0xffffffff); // test set to max
+            // testcell.hole |= 0x1;
+            // testcell.hole |= 1 <<8;
+            // testcell.hole |= static_cast<unsigned long long>(1) << 56;
+            // testcell.hole |= static_cast<unsigned long long>(1) << 63;
+
+            if (need_update)
+                cellDatas.SetDirtyElement(globalCellIndex);
+        }
+    }
+
+
+}
+

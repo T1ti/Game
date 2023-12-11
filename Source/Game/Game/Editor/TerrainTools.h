@@ -22,13 +22,12 @@ namespace Editor
 		{
 			SCULPT = 0,
 			FLAT,
-			SMOOTH,
-			VERTEX, // vertex selection mode?
+			// SMOOTH, // have it as a hardness mode?
 			VERTEX_COLOR,
 			HOLES,
 			IMPASS,
 			AREA,
-			COUNT
+			count
 		};
 
 		enum class TexturingBrushMode

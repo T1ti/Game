@@ -26,6 +26,8 @@ public:
 private:
 	void GetVertexDatasAroundWorldPos(const vec3& worldPos, f32 radius, f32 hardness, Editor::TerrainTools::HardnessMode hardnessMode, std::vector<VertexData>& outVertexData);
 
+	void GetCellDatasAroundWorldPos(const vec3& worldPos, f32 radius);
+
 private:
 	TerrainRenderer& _terrainRenderer;
 	DebugRenderer& _debugRenderer;
