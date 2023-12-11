@@ -96,7 +96,7 @@ namespace Editor
 
                 u32 currentChunkID = Util::Map::GetChunkIdFromChunkPos(chunkPos);
                 u32 currentCellID = Util::Map::GetCellIdFromCellPos(cellPos);
-                u32 currentPatchID = Util::Map::GetCellIdFromCellPos(patchPos);
+                u32 currentPatchID = Util::Map::GetPatchIdFromPatchPos(patchPos);
 
                 ImGui::Text("Chunk : (%u)", currentChunkID);
                 ImGui::Text("Chunk : (%f, %f)", chunkPos.x, chunkPos.y);
