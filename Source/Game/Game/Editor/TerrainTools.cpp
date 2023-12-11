@@ -31,8 +31,8 @@ namespace Editor
 				{
 					Util::Imgui::ColumnRadioButton("Raise/Lower", &_terrainBrushTool, static_cast<i32>(TerrainBrushMode::SCULPT));
 					Util::Imgui::ColumnRadioButton("Flatten", &_terrainBrushTool, static_cast<i32>(TerrainBrushMode::FLAT));
-					Util::Imgui::ColumnRadioButton("Smooth (TODO)", &_terrainBrushTool, static_cast<i32>(TerrainBrushMode::SMOOTH));
-					Util::Imgui::ColumnRadioButton("Vertex (TODO)", &_terrainBrushTool, static_cast<i32>(TerrainBrushMode::VERTEX));
+					// Util::Imgui::ColumnRadioButton("Smooth (TODO)", &_terrainBrushTool, static_cast<i32>(TerrainBrushMode::SMOOTH));
+					Util::Imgui::ColumnRadioButton("Vertex Colors (TODO)", &_terrainBrushTool, static_cast<i32>(TerrainBrushMode::VERTEX_COLOR));
 					Util::Imgui::ColumnRadioButton("Holes (TODO)", &_terrainBrushTool, static_cast<i32>(TerrainBrushMode::HOLES));
 					Util::Imgui::ColumnRadioButton("Impass (TODO)", &_terrainBrushTool, static_cast<i32>(TerrainBrushMode::IMPASS));
 
